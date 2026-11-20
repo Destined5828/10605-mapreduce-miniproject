@@ -14,6 +14,9 @@ from subprocess import Popen, PIPE, check_call
 import sys
 import os
 
+import heapq
+from contextlib import ExitStack
+
 import merge_sort as ms
 import reduce_util as ru
 
@@ -262,21 +265,29 @@ class Worker(SimpleWorker):
                 shell=True)
             
         # Second step - merge-sort the collected files
+        # Merge sorted shards directly into the reducer.
         incoming_shards = [
-            self._shard_bufname(src, i) for i in range(len(indexed_coworkers))
+            self._shard_bufname(src, i)
+            for i in range(len(self.workers))
         ]
-        stem = os.path.basename(src)
-        merge_dst =  f'mergeout-{stem}.tsv'
-        ms.merge_sorted_files(incoming_shards, merge_dst)
 
-        # Third step - run the reducer and save output in 'dst'
+        with ExitStack() as stack:
+            inputs = [
+                stack.enter_context(open(path))
+                for path in incoming_shards
+            ]
+            output = stack.enter_context(open(dst, "w"))
 
-        def pair_generator():
-            for line in open(merge_dst):
-                yield ru.kv_from_line(line)
-        with open(dst, 'w') as fp:
-            for key, values in ru.ReduceReady(pair_generator()):
+            merged_lines = heapq.merge(
+                *inputs,
+                key=ms.line_prefix_key,
+            )
+            pairs = (
+                ru.kv_from_line(line)
+                for line in merged_lines
+            )
+
+            for key, values in ru.ReduceReady(pairs):
                 for reduced_value in self.reduce(key, values):
-                    pair = (key, reduced_value)
-                    fp.write(str(pair) + '\n')
+                    output.write(str((key, reduced_value)) + "\n")
     
