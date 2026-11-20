@@ -16,6 +16,7 @@ import os
 
 import heapq
 from contextlib import ExitStack
+from concurrent.futures import ThreadPoolExecutor
 
 import merge_sort as ms
 import reduce_util as ru
@@ -261,12 +262,18 @@ class Worker(SimpleWorker):
         # since all the reducers are doing this in parallel
         indexed_coworkers = list(enumerate(self.workers))
         random.shuffle(indexed_coworkers)
-        for i, worker in indexed_coworkers:
+        def fetch_shard(item):
+            i, worker = item
             check_call(
                 f'scp {self.scp_args()}'
                 + f' {self.cloud_username}@{worker}:{my_shard}'
                 + f' {self._shard_bufname(src, i)}',
                 shell=True)
+
+        with ThreadPoolExecutor(
+            max_workers=min(4, len(indexed_coworkers))
+        ) as pool:
+            list(pool.map(fetch_shard, indexed_coworkers))
             
         # Second step - merge-sort the collected files
         # Merge sorted shards directly into the reducer.
