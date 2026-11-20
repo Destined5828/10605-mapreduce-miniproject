@@ -99,8 +99,7 @@ class SimpleWorker(CloudBase):
 
         This algorithm is a straightforward hash-shuffle, but doesn't
         scale well.
-
-        """
+        """ 
         this_worker = self.internal2external[socket.gethostname()]
         coworkers = self.workers
 
@@ -211,31 +210,36 @@ class Worker(SimpleWorker):
         return f'mapout-{stem}-for-w{worker_idx:02d}.tsv'
 
     def do_map_and_shuffle(self, src):
-        """Run mapper on src and prepare shards for co-workers. 
-        """
-
-        # Run the map process and save output in local files, one for
-        # each reducer, and sort each local file.
-
+        """Combine repeated words before partitioning and sorting."""
         coworkers = self.workers
+        max_keys = 100_000
+        counts = {}
+        coworker_fp = []
+
+        def flush_counts():
+            for key, total in counts.items():
+                worker_idx = ru.kv_keyhash(key) % len(coworkers)
+                coworker_fp[worker_idx].write(ru.kv_to_line(key, total))
+            counts.clear()
+
         try:
-            coworker_fp = [
-                open(self._shard_bufname_by_recipient(src, i), 'w')
-                for i in range(len(coworkers))]
-            for line in open(src):
-                # run the mapper
-                for key, val in self.map(line):
-                    # convert the pair to a sortable line
-                    kv_line = ru.kv_to_line(key, val)
-                    # figure out where to save this line and write it
-                    key_worker_idx = ru.kv_keyhash(key) % len(coworkers)
-                    coworker_fp[key_worker_idx].write(kv_line)
+            for i in range(len(coworkers)):
+                path = self._shard_bufname_by_recipient(src, i)
+                coworker_fp.append(open(path, "w"))
+
+            with open(src) as source:
+                for line in source:
+                    for key, val in self.map(line):
+                        counts[key] = counts.get(key, 0) + val
+
+                        if len(counts) >= max_keys:
+                            flush_counts()
+
+            flush_counts()
         finally:
             for fp in coworker_fp:
                 fp.close()
-        
-        # Sort the sharded data files - doing it here is marginally
-        # faster than sorting on the reducer side
+
         for i in range(len(coworkers)):
             shard = self._shard_bufname_by_recipient(src, i)
             ms.merge_sort_file(shard, shard)
