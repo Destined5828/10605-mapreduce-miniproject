@@ -18,7 +18,7 @@
     "name": "wikipedia-en-10gb-v1",
     "target_bytes": 10000000000,
     "directory": "data/prepared",
-    "s3_uri": "s3://10605-f26-testing/mapreduce-miniproject/wikipedia-en-10gb-v1/5453ac72a5fd300ce4f4a8eddf8152cae3be6d245ce188fe741127006b600bfc/s3-v1/"
+    "s3_uri": "s3://10605-mapreduce-justin/wordcount-v1/"
   },
   "polars": {
     "workspace_id": null,

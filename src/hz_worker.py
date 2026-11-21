@@ -256,7 +256,7 @@ class Worker(SimpleWorker):
         random.shuffle(indexed_coworkers)
         for i, worker in indexed_coworkers:
             check_call(
-                f'scp {self.scp_args()}'
+                f'scp -C {self.scp_args()}'
                 + f' {self.cloud_username}@{worker}:{my_shard}'
                 + f' {self._shard_bufname(src, i)}',
                 shell=True)
